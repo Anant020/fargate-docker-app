@@ -1,9 +1,7 @@
 name: Deploy Book API
 
 on:
-  push:
-    branches:
-      - main
+  workflow_dispatch: null
 
 permissions:
   id-token: write
