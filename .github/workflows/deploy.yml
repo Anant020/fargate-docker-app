@@ -1,0 +1,92 @@
+name: Deploy Book API
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: bookapi
+  STACK_NAME: bookapi-stack
+  AWS_ACCOUNT_ID: "004947743907"
+
+jobs:
+
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::004947743907:role/BookApiGitHubActionsRole
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check AWS identity
+        run: aws sts get-caller-identity
+
+      # -------------------------
+      # Infrastructure
+      # -------------------------
+
+      - name: Deploy infrastructure
+        run: |
+          aws cloudformation deploy \
+            --template-file cloudformation/ecs-stack.yaml \
+            --stack-name $STACK_NAME \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameter-overrides \
+              ECRRepositoryName=$ECR_REPOSITORY
+
+      # -------------------------
+      # Docker → ECR
+      # -------------------------
+
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password \
+            --region $AWS_REGION |
+          docker login \
+            --username AWS \
+            --password-stdin \
+            $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+
+      - name: Build Docker image
+        run: |
+          docker build -t $ECR_REPOSITORY .
+
+      - name: Tag Docker image
+        run: |
+          docker tag \
+            $ECR_REPOSITORY:latest \
+            $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
+
+      - name: Push Docker image
+        run: |
+          docker push \
+            $AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
+
+      # -------------------------
+      # ECS
+      # -------------------------
+
+      - name: Deploy ECS service
+        run: |
+          IMAGE_URI=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:latest
+
+          aws cloudformation deploy \
+            --template-file cloudformation/ecs-stack.yaml \
+            --stack-name $STACK_NAME \
+            --capabilities CAPABILITY_NAMED_IAM \
+            --parameter-overrides \
+              ECRRepositoryName=$ECR_REPOSITORY \
+              ContainerImage=$IMAGE_URI

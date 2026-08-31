@@ -1,0 +1,38 @@
+name: Delete Book API Stack
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: bookapi-stack
+
+jobs:
+
+  delete:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::004947743907:role/BookApiGitHubActionsRole
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Delete CloudFormation stack
+        run: |
+          aws cloudformation delete-stack \
+            --stack-name $STACK_NAME
+
+      - name: Wait for stack deletion
+        run: |
+          aws cloudformation wait stack-delete-complete \
+            --stack-name $STACK_NAME

@@ -1,0 +1,218 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: FastAPI ECS Fargate deployment
+
+Parameters:
+
+  ECRRepositoryName:
+    Type: String
+    Default: bookapi
+
+  ContainerImage:
+    Type: String
+    Default: ""
+
+Conditions:
+
+  HasContainerImage: !Not
+    - !Equals
+      - !Ref ContainerImage
+      - ""
+
+Resources:
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs ""
+
+      MapPublicIpOnLaunch: true
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select
+        - 1
+        - !GetAZs ""
+
+      MapPublicIpOnLaunch: true
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+
+  DefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn:
+      - InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteTableAssociation1:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  SubnetRouteTableAssociation2:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref ECRRepositoryName
+      EmptyOnDelete: true
+
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: bookapi-cluster
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /ecs/bookapi
+      RetentionInDays: 7
+
+  ECSTaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: bookapi-ecs-execution-role
+
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+            Action:
+              - sts:AssumeRole
+
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  ECSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: FastAPI ECS security group
+      VpcId: !Ref VPC
+
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8000
+          ToPort: 8000
+          CidrIp: 0.0.0.0/0
+
+  ECSTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+
+    Condition: HasContainerImage
+
+    Properties:
+
+      Family: bookapi
+
+      NetworkMode: awsvpc
+
+      RequiresCompatibilities:
+        - FARGATE
+
+      Cpu: "256"
+      Memory: "512"
+
+      ExecutionRoleArn: !GetAtt ECSTaskExecutionRole.Arn
+
+      ContainerDefinitions:
+
+        - Name: bookapi
+
+          Image: !Ref ContainerImage
+
+          Essential: true
+
+          PortMappings:
+            - ContainerPort: 8000
+              Protocol: tcp
+
+          LogConfiguration:
+            LogDriver: awslogs
+
+            Options:
+              awslogs-group: !Ref LogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: bookapi
+
+  ECSService:
+    Type: AWS::ECS::Service
+
+    Condition: HasContainerImage
+
+    DependsOn:
+      - DefaultRoute
+
+    Properties:
+
+      ServiceName: bookapi-service
+
+      Cluster: !Ref ECSCluster
+
+      LaunchType: FARGATE
+
+      DesiredCount: 1
+
+      TaskDefinition: !Ref ECSTaskDefinition
+
+      NetworkConfiguration:
+
+        AwsvpcConfiguration:
+
+          AssignPublicIp: ENABLED
+
+          SecurityGroups:
+            - !Ref ECSSecurityGroup
+
+          Subnets:
+            - !Ref PublicSubnet1
+            - !Ref PublicSubnet2
+
+Outputs:
+
+  ECRRepositoryUri:
+    Value: !GetAtt ECRRepository.RepositoryUri
+
+  ECSCluster:
+    Value: !Ref ECSCluster
+
+  ECSService:
+    Condition: HasContainerImage
+    Value: !Ref ECSService

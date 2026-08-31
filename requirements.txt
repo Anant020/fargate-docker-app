@@ -3,3 +3,4 @@ uvicorn[standard]
 python-jose
 python-multipart
 pwdlib[argon2]
+sqlalchemy
