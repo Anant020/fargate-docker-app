@@ -121,6 +121,17 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
 
+  # Ensures the AWSServiceRoleForECS service-linked role exists in this
+  # account/region before ECS tries to create a service. Without this,
+  # ECSService creation fails with:
+  # "Unable to assume the service linked role..."
+  # If the role already exists in this account, remove this resource
+  # (CloudFormation will fail with "role already exists" otherwise).
+  ECSServiceLinkedRole:
+    Type: AWS::IAM::ServiceLinkedRole
+    Properties:
+      AWSServiceName: ecs.amazonaws.com
+
   ECSSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -179,6 +190,7 @@ Resources:
 
     DependsOn:
       - DefaultRoute
+      - ECSServiceLinkedRole
 
     Properties:
 
