@@ -1,0 +1,38 @@
+name: Deploy IAM Bootstrap (run once per account)
+
+on:
+  workflow_dispatch: null
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: bookapi-iam-bootstrap
+
+jobs:
+
+  deploy-bootstrap:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::004947743907:role/BookApiGitHubActionsRole
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Deploy IAM bootstrap stack
+        run: |
+          aws cloudformation deploy \
+            --template-file cloudformation/iam-bootstrap.yaml \
+            --stack-name $STACK_NAME \
+            --capabilities CAPABILITY_NAMED_IAM

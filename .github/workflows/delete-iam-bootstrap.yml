@@ -1,0 +1,47 @@
+name: Delete IAM Bootstrap (use with caution)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: >
+          Type DELETE to confirm. This removes AWSServiceRoleForECS from
+          the account. Do NOT run this while any ECS service still exists
+          in this account/region - deletion will fail if the role is in use.
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+  STACK_NAME: bookapi-iam-bootstrap
+
+jobs:
+
+  delete-bootstrap:
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Verify confirmation input
+        run: |
+          if [ "${{ github.event.inputs.confirm }}" != "DELETE" ]; then
+            echo "Confirmation text did not match DELETE. Aborting."
+            exit 1
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::004947743907:role/BookApiGitHubActionsRole
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Check AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Delete IAM bootstrap stack
+        run: |
+          aws cloudformation delete-stack --stack-name $STACK_NAME
+          aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME

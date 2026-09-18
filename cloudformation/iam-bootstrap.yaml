@@ -1,0 +1,25 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >
+  One-time, account-level IAM bootstrap for ECS. Deploy this stack ONCE
+  per AWS account and leave it alone. Do not delete it as part of normal
+  app teardown/redeploy cycles - it is not tied to the app's lifecycle.
+
+Resources:
+
+  # AWSServiceRoleForECS must exist before ECS can create ANY service in
+  # this account/region. Without it, ECSService creation in the app stack
+  # fails with "Unable to assume the service linked role...".
+  #
+  # This lives here, separate from the app stack, so that deleting or
+  # recreating the app stack (ecs-stack.yaml) never touches this role.
+  ECSServiceLinkedRole:
+    Type: AWS::IAM::ServiceLinkedRole
+    Properties:
+      AWSServiceName: ecs.amazonaws.com
+
+Outputs:
+
+  ECSServiceLinkedRoleArn:
+    Description: ARN of the ECS service-linked role
+    Value: !GetAtt ECSServiceLinkedRole.Arn
